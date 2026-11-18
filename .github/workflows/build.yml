@@ -68,6 +68,19 @@ jobs:
           grep -qx 'CONFIG_PACKAGE_luci-app-upnp=y' .config
           cp .config ../resolved-config.txt
 
+      - name: Download erofs-utils with retries
+        working-directory: lede
+        run: |
+          for attempt in 1 2 3; do
+            if make tools/erofs-utils/download -j1 V=s; then
+              exit 0
+            fi
+            echo "erofs-utils download failed (attempt $attempt/3)"
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          echo "::error::Unable to download erofs-utils; compilation has not started"
+          exit 1
+
       - name: Download build sources
         working-directory: lede
         run: make download -j8
