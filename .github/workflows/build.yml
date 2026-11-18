@@ -57,6 +57,12 @@ jobs:
           cp mi3g.config lede/.config
           cd lede
           make defconfig
+          for opt in KERNEL_KALLSYMS KERNEL_DEBUG_INFO KERNEL_DEBUG_INFO_BTF KERNEL_DEBUG_INFO_BTF_MODULES; do
+            if grep -qx "CONFIG_${opt}=y" .config; then
+              echo "::error::$opt was re-enabled by a dependency; stop before compilation"
+              exit 1
+            fi
+          done
           grep -qx 'CONFIG_PACKAGE_luci-mod-network=y' .config
           grep -qx 'CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_mi-router-3g=y' .config
           grep -qx 'CONFIG_PACKAGE_luci-app-upnp=y' .config
@@ -80,3 +86,16 @@ jobs:
             source-version.txt
             resolved-config.txt
           if-no-files-found: error
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LEDE-build-diagnostics
+          path: |
+            source-version.txt
+            resolved-config.txt
+            lede/.config
+            lede/build_dir/target-*/linux-*/linux-*/.config
+          include-hidden-files: true
+          if-no-files-found: warn
