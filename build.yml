@@ -1,0 +1,101 @@
+name: Build LEDE for Xiaomi 3G
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout configuration
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git \
+            libncurses-dev libssl-dev libelf-dev \
+            zlib1g-dev libgmp-dev libmpc-dev libmpfr-dev \
+            python3 python3-setuptools python3-pyelftools \
+            rsync unzip zip zstd file wget curl \
+            swig subversion time xsltproc \
+            autoconf automake libtool autopoint \
+            cmake ninja-build pkgconf help2man \
+            texinfo device-tree-compiler cpio \
+            libfuse-dev libglib2.0-dev libltdl-dev \
+            libreadline-dev libpython3-dev libnsl-dev \
+            asciidoc antlr3 gperf intltool \
+            p7zip-full qemu-utils scons squashfs-tools \
+            uglifyjs xmlto xxd
+
+      - name: Download LEDE source
+        run: |
+          git clone --depth 1 \
+            https://github.com/coolsnowwolf/lede.git lede
+          git -C lede rev-parse HEAD | tee source-version.txt
+
+      - name: Install feeds
+        working-directory: lede
+        run: |
+          ./scripts/feeds update -a
+          test -s feeds/luci/modules/luci-mod-network/Makefile
+          ./scripts/feeds update -i luci
+          grep -q '^Package: luci-mod-network$' feeds/luci.index
+          ./scripts/feeds install -a
+          ./scripts/feeds install -p luci luci-mod-network
+          test -s package/feeds/luci/luci-mod-network/Makefile
+
+      - name: Configure Xiaomi 3G
+        run: |
+          cp mi3g.config lede/.config
+          cd lede
+          make defconfig
+          for opt in KERNEL_KALLSYMS KERNEL_DEBUG_INFO KERNEL_DEBUG_INFO_BTF KERNEL_DEBUG_INFO_BTF_MODULES; do
+            if grep -qx "CONFIG_${opt}=y" .config; then
+              echo "::error::$opt was re-enabled by a dependency; stop before compilation"
+              exit 1
+            fi
+          done
+          grep -qx 'CONFIG_PACKAGE_luci-mod-network=y' .config
+          grep -qx 'CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_mi-router-3g=y' .config
+          grep -qx 'CONFIG_PACKAGE_luci-app-upnp=y' .config
+          cp .config ../resolved-config.txt
+
+      - name: Download build sources
+        working-directory: lede
+        run: make download -j8
+
+      - name: Compile firmware
+        working-directory: lede
+        run: make -j2 V=s
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: LEDE-Xiaomi-3G
+          path: |
+            lede/bin/targets/ramips/mt7621/*
+            !lede/bin/targets/ramips/mt7621/packages/**
+            source-version.txt
+            resolved-config.txt
+          if-no-files-found: error
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LEDE-build-diagnostics
+          path: |
+            source-version.txt
+            resolved-config.txt
+            lede/.config
+            lede/build_dir/target-*/linux-*/linux-*/.config
+          include-hidden-files: true
+          if-no-files-found: warn
