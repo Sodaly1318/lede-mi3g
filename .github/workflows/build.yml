@@ -45,13 +45,19 @@ jobs:
         working-directory: lede
         run: |
           ./scripts/feeds update -a
+          test -s feeds/luci/modules/luci-mod-network/Makefile
+          ./scripts/feeds update -i luci
+          grep -q '^Package: luci-mod-network$' feeds/luci.index
           ./scripts/feeds install -a
+          ./scripts/feeds install -p luci luci-mod-network
+          test -s package/feeds/luci/luci-mod-network/Makefile
 
       - name: Configure Xiaomi 3G
         run: |
           cp mi3g.config lede/.config
           cd lede
           make defconfig
+          grep -qx 'CONFIG_PACKAGE_luci-mod-network=y' .config
           grep -qx 'CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_mi-router-3g=y' .config
           grep -qx 'CONFIG_PACKAGE_luci-app-upnp=y' .config
           cp .config ../resolved-config.txt
